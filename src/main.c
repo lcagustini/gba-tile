@@ -17,6 +17,13 @@ typedef enum {
     COLOR256,
 } ParseMode;
 
+typedef enum {
+    SIZE256x256 = 0b00,
+    SIZE512x256 = 0b10,
+    SIZE256x512 = 0b01,
+    SIZE512x512 = 0b11,
+} ImageSize;
+
 typedef struct {
     uint8_t tiles[1024][8][8];
     int tilesLen;
@@ -272,8 +279,9 @@ void exportASM(char *path, ASM image) {
 int main(int argc, char* argv[]){
     ASM image = {0};
     ParseMode mode = atoi(argv[2]);
-    loadASM(argv[1], &image, mode);
+    ImageSize size = atoi(argv[3]);
 
+    loadASM(argv[1], &image, mode);
     exportASM("dump.s", image);
 
     SDL_Window *window = NULL;
@@ -294,6 +302,9 @@ int main(int argc, char* argv[]){
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     float zoom = 1;
     double screen_x = 0, screen_y = 0;
+
+    Uint64 curTime = SDL_GetPerformanceCounter();
+    Uint64 lastTime = 0;
 
     SDL_Event e;
     while(1){
@@ -345,13 +356,17 @@ int main(int argc, char* argv[]){
                 }
             }
             x++;
-            if (x == 32) { //32 map blocks -> 256 pixels
+            if (x == (size & 0b10 ? 64 : 32)) { //32 map blocks -> 256 pixels
                 x = 0;
                 y++;
             }
         }
 
         SDL_RenderPresent(renderer);
+
+        lastTime = curTime;
+        curTime = SDL_GetPerformanceCounter();
+        printf("FPS: %lf\n", (double) ((double) SDL_GetPerformanceFrequency() / (abs(curTime - lastTime))));
     }
 
     SDL_DestroyWindow(window);
