@@ -313,10 +313,8 @@ int main(int argc, char* argv[]){
 
         SDL_RenderSetScale(renderer, zoom, zoom);
 
-        SDL_Rect viewport;
-        SDL_RenderGetViewport(renderer, &viewport);
-        viewport.x = screen_x;
-        viewport.y = screen_y;
+        SDL_Rect viewport = {.x = screen_x, .y = screen_y, .w = 0, .h = 0};
+        SDL_GetWindowSize(window, &viewport.w, &viewport.h);
         SDL_RenderSetViewport(renderer, &viewport);
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
@@ -327,7 +325,7 @@ int main(int argc, char* argv[]){
             for (int j = 0; j < 8; j++) {
                 for (int k = 0; k < 8; k++) {
                     int pal_index = image.tiles[image.map.tile_num[i]][k][j];
-                    int color15 = image.mode == COLOR256 ? image.pal[pal_index] : image.pal[(image.map.palette[i] >> 4) + pal_index];
+                    int color15 = image.mode == COLOR256 ? image.pal[pal_index] : image.pal[(image.map.palette[i] << 4) + pal_index];
 
                     int r = (color15 & 0x1F) << 3;
                     int g = ((color15 >> 5) & 0x1F) << 3;
