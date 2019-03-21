@@ -1,14 +1,21 @@
 #include <SDL2/SDL.h>
+
 #include <string.h>
 #include <stdint.h>
+
+#include "kiss_sdl.h"
 
 #define WIDTH 800
 #define HEIGHT 800
 
+#define bool uint8_t
+#define TRUE 1
+#define FALSE 0
+
 typedef struct {
     uint16_t tile_num[262144];
-    uint8_t hflip[262144];
-    uint8_t vflip[262144];
+    bool hflip[262144];
+    bool vflip[262144];
     uint8_t palette[262144];
 } Map;
 
@@ -182,7 +189,7 @@ int loadASM(char *path, ASM *image, ParseMode mode) {
                         }
                         fprintf(log, "Line %d: %s -> Palette\n", line_num, line);
 
-                        sscanf(line, " .hword 0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x",
+                        sscanf(line, " .hword 0x%hx,0x%hx,0x%hx,0x%hx,0x%hx,0x%hx,0x%hx,0x%hx",
                                 &image->pal[pal_i],&image->pal[pal_i+1],&image->pal[pal_i+2],&image->pal[pal_i+3],
                                 &image->pal[pal_i+4],&image->pal[pal_i+5],&image->pal[pal_i+6],&image->pal[pal_i+7]);
                         pal_i += 8;
@@ -281,31 +288,24 @@ int main(int argc, char* argv[]){
     ParseMode mode = atoi(argv[2]);
     ImageSize size = atoi(argv[3]);
 
+    kiss_array objects;
+    kiss_window window;
+
+    kiss_array_new(&objects);
+    SDL_Renderer *renderer = kiss_init("gba-tile", &objects, WIDTH, HEIGHT);
+
+    if (!renderer) exit(1);
+
+    kiss_window_new(&window, NULL, 0, 400, 400, 300, 200);
+    window.visible = 1;
+
     loadASM(argv[1], &image, mode);
     exportASM("dump.s", image);
 
-    SDL_Window *window = NULL;
-
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
-        exit(1);
-    }
-    window = SDL_CreateWindow("gba-tile", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH, HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
-    if (window == NULL) {
-        printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
-        exit(1);
-    }
-
-    if (!window) exit(1);
-
-    SDL_Surface *screenSurface = SDL_GetWindowSurface(window);
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     float zoom = 1;
     double screen_x = 0, screen_y = 0;
 
-    Uint64 curTime = SDL_GetPerformanceCounter();
-    Uint64 lastTime = 0;
-
+    bool update_screen = TRUE;
     SDL_Event e;
     while(1){
         while(SDL_PollEvent(&e)){
@@ -313,64 +313,79 @@ int main(int argc, char* argv[]){
             else if (e.type == SDL_MOUSEWHEEL) {
                 zoom += e.wheel.y/10.0;
                 if (zoom < 0.2) zoom = 0.2;
+                update_screen = TRUE;
             }
             else if (e.type == SDL_MOUSEMOTION) {
                 if (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(SDL_BUTTON_LEFT)) {
                     screen_x += e.motion.xrel;
                     screen_y += e.motion.yrel;
+                    update_screen = TRUE;
                 }
             }
+            kiss_window_event(&window, &e, &update_screen);
         }
 
-        SDL_RenderSetScale(renderer, zoom, zoom);
+        uint64_t start_time = SDL_GetPerformanceCounter();
+        if (update_screen) {
+            update_screen = FALSE;
 
-        SDL_Rect viewport = {.x = screen_x, .y = screen_y, .w = 0, .h = 0};
-        SDL_GetWindowSize(window, &viewport.w, &viewport.h);
-        SDL_RenderSetViewport(renderer, &viewport);
+            {
+                SDL_RenderSetScale(renderer, zoom, zoom);
+                SDL_Rect viewport = {.x = screen_x, .y = screen_y, .w = kiss_screen_width, .h = kiss_screen_height};
+                SDL_RenderSetViewport(renderer, &viewport);
+            }
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-        SDL_RenderClear(renderer);
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+            SDL_RenderClear(renderer);
 
-        int x = 0, y = 0;
-        for (int i = 0; i < image.mapLen; i++) {
-            for (int j = 0; j < 8; j++) {
-                for (int k = 0; k < 8; k++) {
-                    int pal_index = image.tiles[image.map.tile_num[i]][k][j];
-                    int color15 = image.mode == COLOR256 ? image.pal[pal_index] : image.pal[(image.map.palette[i] << 4) + pal_index];
+            int x = 0, y = 0;
+            for (int i = 0; i < image.mapLen; i++) {
+                for (int j = 0; j < 8; j++) {
+                    for (int k = 0; k < 8; k++) {
+                        int pal_index = image.tiles[image.map.tile_num[i]][k][j];
+                        int color15 = image.mode == COLOR256 ? image.pal[pal_index] : image.pal[(image.map.palette[i] << 4) + pal_index];
 
-                    int r = (color15 & 0x1F) << 3;
-                    int g = ((color15 >> 5) & 0x1F) << 3;
-                    int b = ((color15 >> 10) & 0x1F) << 3;
+                        int r = (color15 & 0x1F) << 3;
+                        int g = ((color15 >> 5) & 0x1F) << 3;
+                        int b = ((color15 >> 10) & 0x1F) << 3;
 
-                    int temp_x = k, temp_y = j;
+                        int temp_x = k, temp_y = j;
 
-                    if (image.map.hflip[i]) {
-                        temp_x = 7 - temp_x;
+                        if (image.map.hflip[i]) {
+                            temp_x = 7 - temp_x;
+                        }
+                        if (image.map.vflip[i]) {
+                            temp_y = 7 - temp_y;
+                        }
+
+                        SDL_SetRenderDrawColor(renderer, r, g, b, SDL_ALPHA_OPAQUE);
+                        SDL_RenderDrawPoint(renderer, 8*x + temp_x, 8*y + temp_y);
                     }
-                    if (image.map.vflip[i]) {
-                        temp_y = 7 - temp_y;
-                    }
-
-                    SDL_SetRenderDrawColor(renderer, r, g, b, SDL_ALPHA_OPAQUE);
-                    SDL_RenderDrawPoint(renderer, 8*x + temp_x, 8*y + temp_y);
+                }
+                x++;
+                if (x == (size & 0b10 ? 64 : 32)) { //32 map blocks -> 256 pixels; 64 -> 512
+                    x = 0;
+                    y++;
                 }
             }
-            x++;
-            if (x == (size & 0b10 ? 64 : 32)) { //32 map blocks -> 256 pixels
-                x = 0;
-                y++;
+
+            {
+                SDL_RenderSetScale(renderer, 1, 1);
+                SDL_Rect viewport = {.x = 0, .y = 0, .w = kiss_screen_width, .h = kiss_screen_height};
+                SDL_RenderSetViewport(renderer, &viewport);
+                kiss_window_draw(&window, renderer);
             }
+
+            SDL_RenderPresent(renderer);
         }
+        int64_t elapsed_time = SDL_GetPerformanceCounter() - start_time;
 
-        SDL_RenderPresent(renderer);
-
-        lastTime = curTime;
-        curTime = SDL_GetPerformanceCounter();
-        printf("FPS: %lf\n", (double) ((double) SDL_GetPerformanceFrequency() / (abs(curTime - lastTime))));
+        if (elapsed_time > 0) {
+            SDL_Delay((double) (abs(elapsed_time) / (double) SDL_GetPerformanceFrequency()));
+        }
     }
 
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+    kiss_clean(&objects);
 
     return 0;
 }
