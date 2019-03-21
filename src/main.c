@@ -12,6 +12,11 @@ typedef struct {
     uint8_t palette[262144];
 } Map;
 
+typedef enum {
+    COLOR16,
+    COLOR256,
+} ParseMode;
+
 typedef struct {
     uint8_t tiles[1024][8][8];
     int tilesLen;
@@ -21,12 +26,9 @@ typedef struct {
 
     uint16_t pal[256];
     int palLen;
-} ASM;
 
-typedef enum {
-    COLOR16,
-    COLOR256,
-} ParseMode;
+    ParseMode mode;
+} ASM;
 
 void putPixel(SDL_Surface *surface, int x, int y, uint32_t pixel){
     uint32_t *pixels = (uint32_t*)surface->pixels;
@@ -43,6 +45,8 @@ int loadASM(char *path, ASM *image, ParseMode mode) {
     }
 
     fprintf(log, "Reading file: %s\n", path);
+
+    image->mode = mode;
 
     int section = 0;
     char line[512];
@@ -189,11 +193,36 @@ int loadASM(char *path, ASM *image, ParseMode mode) {
     return 0;
 }
 
+void dumpASM(char *path, ASM image) {
+    FILE *f = fopen(path, "w");
+
+    fprintf(f, "tiles:");
+    for (int i = 0; i < image.tilesLen; i++) {
+        if (!(i % 8)) fprintf(f, "\n");
+        fprintf(f, "%08x,", image.tiles[i]);
+    }
+    fprintf(f, "\nmap:");
+    for (int i = 0; i < image.mapLen; i++) {
+        if (!(i % 8)) fprintf(f, "\n");
+        int block = image.map.tile_num[i] | (image.map.hflip[i] << 10) | (image.map.vflip[i] << 11) | (image.map.palette[i] << 12);
+        fprintf(f, "%04x,", block);
+    }
+    fprintf(f, "\npal:");
+    for (int i = 0; i < image.palLen; i++) {
+        if (!(i % 8)) fprintf(f, "\n");
+        fprintf(f, "%04x,", image.pal[i]);
+    }
+    fprintf(f, "\n");
+
+    fclose(f);
+}
+
 int main(int argc, char* argv[]){
     ASM image = {0};
-    loadASM(argv[1], &image, atoi(argv[2]));
+    ParseMode mode = atoi(argv[2]);
+    loadASM(argv[1], &image, mode);
 
-    //dumpASM("dump.s", &image);
+    dumpASM("dump.s", image);
 
     SDL_Window *window = NULL;
 
@@ -223,7 +252,8 @@ int main(int argc, char* argv[]){
         for (int i = 0; i < image.mapLen; i++) {
             for (int j = 0; j < 8; j++) {
                 for (int k = 0; k < 8; k++) {
-                    int color15 = image.pal[image.tiles[image.map.tile_num[i]][k][j]];
+                    int pal_index = image.tiles[image.map.tile_num[i]][k][j];
+                    int color15 = image.mode == COLOR256 ? image.pal[pal_index] : image.pal[(image.map.palette[i] >> 4) + pal_index];
 
                     int r = color15 & 0x1F;
                     int g = (color15 >> 5) & 0x1F;
