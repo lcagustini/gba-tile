@@ -91,26 +91,26 @@ int loadASM(char *path, ASM *image, ParseMode mode) {
                                 &words[0],&words[1],&words[2],&words[3],&words[4],&words[5],&words[6],&words[7]);
                         if (mode == COLOR16) {
                             for (int i = 0; i < 8; i++) {
-                                image->tiles[tile_i][7][i] = (0xF0000000 & words[i]) >> 28;
-                                image->tiles[tile_i][6][i] = (0x0F000000 & words[i]) >> 24;
-                                image->tiles[tile_i][5][i] = (0x00F00000 & words[i]) >> 20;
-                                image->tiles[tile_i][4][i] = (0x000F0000 & words[i]) >> 16;
-                                image->tiles[tile_i][3][i] = (0x0000F000 & words[i]) >> 12;
-                                image->tiles[tile_i][2][i] = (0x00000F00 & words[i]) >> 8;
-                                image->tiles[tile_i][1][i] = (0x000000F0 & words[i]) >> 4;
-                                image->tiles[tile_i][0][i] = (0x0000000F & words[i]);
+                                image->tiles[tile_i][7][i] = 0xF & (words[i] >> 28);
+                                image->tiles[tile_i][6][i] = 0xF & (words[i] >> 24);
+                                image->tiles[tile_i][5][i] = 0xF & (words[i] >> 20);
+                                image->tiles[tile_i][4][i] = 0xF & (words[i] >> 16);
+                                image->tiles[tile_i][3][i] = 0xF & (words[i] >> 12);
+                                image->tiles[tile_i][2][i] = 0xF & (words[i] >> 8);
+                                image->tiles[tile_i][1][i] = 0xF & (words[i] >> 4);
+                                image->tiles[tile_i][0][i] = 0xF & (words[i]);
                             }
                         }
                         else {
                             for (int i = 0; i < 8; i += 2) {
-                                image->tiles[tile_i][7][half+i/2] = (0xFF000000 & words[i+1]) >> 24;
-                                image->tiles[tile_i][6][half+i/2] = (0x00FF0000 & words[i+1]) >> 16;
-                                image->tiles[tile_i][5][half+i/2] = (0x0000FF00 & words[i+1]) >> 8;
-                                image->tiles[tile_i][4][half+i/2] = (0x000000FF & words[i+1]);
-                                image->tiles[tile_i][3][half+i/2] = (0xFF000000 & words[i]) >> 24;
-                                image->tiles[tile_i][2][half+i/2] = (0x00FF0000 & words[i]) >> 16;
-                                image->tiles[tile_i][1][half+i/2] = (0x0000FF00 & words[i]) >> 8;
-                                image->tiles[tile_i][0][half+i/2] = (0x000000FF & words[i]);
+                                image->tiles[tile_i][7][half+i/2] = 0xFF & (words[i+1] >> 24);
+                                image->tiles[tile_i][6][half+i/2] = 0xFF & (words[i+1] >> 16);
+                                image->tiles[tile_i][5][half+i/2] = 0xFF & (words[i+1] >> 8);
+                                image->tiles[tile_i][4][half+i/2] = 0xFF & (words[i+1]);
+                                image->tiles[tile_i][3][half+i/2] = 0xFF & (words[i] >> 24);
+                                image->tiles[tile_i][2][half+i/2] = 0xFF & (words[i] >> 16);
+                                image->tiles[tile_i][1][half+i/2] = 0xFF & (words[i] >> 8);
+                                image->tiles[tile_i][0][half+i/2] = 0xFF & (words[i]);
                             }
                             half = half == 0 ? 4 : 0;
                         }
@@ -193,24 +193,76 @@ int loadASM(char *path, ASM *image, ParseMode mode) {
     return 0;
 }
 
-void dumpASM(char *path, ASM image) {
+void exportASM(char *path, ASM image) {
     FILE *f = fopen(path, "w");
 
-    fprintf(f, "tiles:");
+    fprintf(f, "tiles:\n    .word ");
     for (int i = 0; i < image.tilesLen; i++) {
-        if (!(i % 8)) fprintf(f, "\n");
-        fprintf(f, "%08x,", image.tiles[i]);
+        for (int j = 0; j < 8; j++) {
+            if (image.mode == COLOR16) {
+                int tile = (image.tiles[i][7][j] << 28);
+                tile |= (image.tiles[i][6][j] << 24);
+                tile |= (image.tiles[i][5][j] << 20);
+                tile |= (image.tiles[i][4][j] << 16);
+                tile |= (image.tiles[i][3][j] << 12);
+                tile |= (image.tiles[i][2][j] << 8);
+                tile |= (image.tiles[i][1][j] << 4);
+                tile |= (image.tiles[i][0][j]);
+                if (j < 7) {
+                    fprintf(f, "0x%08x,", tile);
+                }
+                else {
+                    fprintf(f, "0x%08x", tile);
+                }
+            }
+            else {
+                int tile = (image.tiles[i][3][j] << 24);
+                tile |= (image.tiles[i][2][j] << 16);
+                tile |= (image.tiles[i][1][j] << 8);
+                tile |= (image.tiles[i][0][j]);
+                fprintf(f, "0x%08x,", tile);
+
+                tile = (image.tiles[i][7][j] << 24);
+                tile |= (image.tiles[i][6][j] << 16);
+                tile |= (image.tiles[i][5][j] << 8);
+                tile |= (image.tiles[i][4][j]);
+                if (j == 3 || j == 7) {
+                    fprintf(f, "0x%08x", tile);
+                }
+                else {
+                    fprintf(f, "0x%08x,", tile);
+                }
+
+                if (j == 3) fprintf(f, "\n    .word ");
+            }
+        }
+        if (i < image.tilesLen-1) {
+            fprintf(f, "\n    .word ");
+        }
+        else {
+            fprintf(f, "\n");
+        }
     }
-    fprintf(f, "\nmap:");
+    fprintf(f, "map:");
     for (int i = 0; i < image.mapLen; i++) {
-        if (!(i % 8)) fprintf(f, "\n");
+        if (!(i % 8)) fprintf(f, "\n    .hword ");
         int block = image.map.tile_num[i] | (image.map.hflip[i] << 10) | (image.map.vflip[i] << 11) | (image.map.palette[i] << 12);
-        fprintf(f, "%04x,", block);
+        if ((i+1) % 8) {
+            fprintf(f, "0x%04x,", block);
+        }
+        else {
+            fprintf(f, "0x%04x", block);
+        }
     }
     fprintf(f, "\npal:");
     for (int i = 0; i < image.palLen; i++) {
-        if (!(i % 8)) fprintf(f, "\n");
-        fprintf(f, "%04x,", image.pal[i]);
+        if (!(i % 8)) fprintf(f, "\n    .hword ");
+        if ((i+1) % 8) {
+            fprintf(f, "0x%04x,", image.pal[i]);
+        }
+        else {
+            fprintf(f, "0x%04x", image.pal[i]);
+        }
     }
     fprintf(f, "\n");
 
@@ -222,16 +274,16 @@ int main(int argc, char* argv[]){
     ParseMode mode = atoi(argv[2]);
     loadASM(argv[1], &image, mode);
 
-    dumpASM("dump.s", image);
+    exportASM("dump.s", image);
 
     SDL_Window *window = NULL;
 
-    if(SDL_Init(SDL_INIT_VIDEO) < 0){
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
         exit(1);
     }
-    window = SDL_CreateWindow("gba-tile", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH, HEIGHT, SDL_WINDOW_SHOWN /*| SDL_WINDOW_FULLSCREEN*/);
-    if(window == NULL){
+    window = SDL_CreateWindow("gba-tile", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH, HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+    if (window == NULL) {
         printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
         exit(1);
     }
@@ -239,14 +291,36 @@ int main(int argc, char* argv[]){
     if (!window) exit(1);
 
     SDL_Surface *screenSurface = SDL_GetWindowSurface(window);
-    uint8_t *pixels = (uint8_t*)screenSurface->pixels;
-    SDL_Event e;
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    float zoom = 1;
+    double screen_x = 0, screen_y = 0;
 
+    SDL_Event e;
     while(1){
         while(SDL_PollEvent(&e)){
-            if(e.type == SDL_QUIT)
-                exit(0);
+            if (e.type == SDL_QUIT) exit(0);
+            else if (e.type == SDL_MOUSEWHEEL) {
+                zoom += e.wheel.y/10.0;
+                if (zoom < 0.2) zoom = 0.2;
+            }
+            else if (e.type == SDL_MOUSEMOTION) {
+                if (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(SDL_BUTTON_LEFT)) {
+                    screen_x += e.motion.xrel;
+                    screen_y += e.motion.yrel;
+                }
+            }
         }
+
+        SDL_RenderSetScale(renderer, zoom, zoom);
+
+        SDL_Rect viewport;
+        SDL_RenderGetViewport(renderer, &viewport);
+        viewport.x = screen_x;
+        viewport.y = screen_y;
+        SDL_RenderSetViewport(renderer, &viewport);
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+        SDL_RenderClear(renderer);
 
         int x = 0, y = 0;
         for (int i = 0; i < image.mapLen; i++) {
@@ -255,11 +329,9 @@ int main(int argc, char* argv[]){
                     int pal_index = image.tiles[image.map.tile_num[i]][k][j];
                     int color15 = image.mode == COLOR256 ? image.pal[pal_index] : image.pal[(image.map.palette[i] >> 4) + pal_index];
 
-                    int r = color15 & 0x1F;
-                    int g = (color15 >> 5) & 0x1F;
-                    int b = (color15 >> 10) & 0x1F;
-
-                    int color24 = b << 3 | g << 11 | r << 19;
+                    int r = (color15 & 0x1F) << 3;
+                    int g = ((color15 >> 5) & 0x1F) << 3;
+                    int b = ((color15 >> 10) & 0x1F) << 3;
 
                     int temp_x = k, temp_y = j;
 
@@ -269,7 +341,9 @@ int main(int argc, char* argv[]){
                     if (image.map.vflip[i]) {
                         temp_y = 7 - temp_y;
                     }
-                    putPixel(screenSurface, 8*x + temp_x, 8*y + temp_y, color24);
+
+                    SDL_SetRenderDrawColor(renderer, r, g, b, SDL_ALPHA_OPAQUE);
+                    SDL_RenderDrawPoint(renderer, 8*x + temp_x, 8*y + temp_y);
                 }
             }
             x++;
@@ -279,7 +353,7 @@ int main(int argc, char* argv[]){
             }
         }
 
-        SDL_UpdateWindowSurface(window);
+        SDL_RenderPresent(renderer);
     }
 
     SDL_DestroyWindow(window);
