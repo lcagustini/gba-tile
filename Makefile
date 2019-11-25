@@ -12,4 +12,4 @@ clean:
 	rm -rf bin/
 
 run: all
-	bin/main asm/title.s 1 0
+	bin/main asm/paused.s 0 0
